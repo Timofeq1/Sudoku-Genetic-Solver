@@ -13,11 +13,12 @@ namespace Sudoku
     public class Sudoku
     {
         #region Static Constants
+        public static bool PrintFitness = true; // if true, additionaly to solution, average and maximum fitness is written to output
         public static SudokuGrid init = new SudokuGrid();  // Initial grid given by input
         public static int FitnessCriticalNumber = 240; // Maximum number of generations without fitness improvement
         public static int InitialPopulationSize = 100; // Number of grids in inital population
         public static int SelectionSize = 9; // Size of selection group (grids with best fitness)
-        public static int MaxPopulationSize = SelectionSize * SelectionSize; // Square of selection group
+        public static int MaxPopulationSize = (SelectionSize * SelectionSize) - SelectionSize; // Square of selection group
         public static double MutationBase = 0.0; // This number is used to regualte mutations number
         private static Random random = new Random(); // Static random variable for better efficeiency
         public static HashSet<int>[] PrecomputedGivenRows = new HashSet<int>[9]; // Set of given numbers in each row
@@ -104,6 +105,7 @@ namespace Sudoku
             var initialPopulation = new List<SudokuGrid>();
             CreatePopulation(InitialPopulationSize, init, initialPopulation);
 
+            // Parallel compuation of fitness rank (fitness function value)
             Parallel.ForEach(initialPopulation, grid =>
             {
                 grid.rank = FitnessFunction(grid);
@@ -114,20 +116,28 @@ namespace Sudoku
             });
 
 
-            int currentGeneration = 0;
-            List<int> minFitnessHistory = new List<int>(); // Track stagnation
-            List<int> varienceHistory = new List<int>();
-            List<bool> guarenteedMutationHistory = new List<bool>();
-            bool GuaranteedMutation = false;
-            bool TakeDiversity = false;
-            int takeNumber = 2;
-            int id1 = 20;
-            int id2 = 21;
-#endregion
+            int currentGeneration = 0; // counter of generations
+            List<int> minFitnessHistory = new List<int>(); // Tracks stagnation in fitness function value of best grid
+            List<int> varienceHistory = new List<int>(); // additonal funtionalitiy used to track varience of fitness
+            List<bool> guarenteedMutationHistory = new List<bool>(); // used to enhance mutaions in case of stagnation
+            bool GuaranteedMutation = false; // turns the 100% mutation for all children in case of long stagnation
+            bool TakeDiversity = false; // another way to imporve convergence of fitness is to take diversity selection
+            int takeNumber = 2; // only two out of Selection size currently
+            int id1 = SelectionSize * 2; // some random ids of diversity selected grids
+            int id2 = SelectionSize * 2 + 1;
+            #endregion
+            #region 2. Generations loop
             while (true)
             {
-                // Extract the best 10 individuals from the population
-
+                // Extract the best grids from the population of Selection size number
+                // array of new selection 
+                SudokuGrid[] temp = new SudokuGrid[SelectionSize];
+                // populate it with best grids
+                for (int i = 0; i < SelectionSize; i++)
+                {
+                    temp[i] = population.Dequeue();
+                }
+                // if enhanced mutatation (turns on when best grids have same fitness for more than "selection size" number generations)
                 if (guarenteedMutationHistory.Count > SelectionSize)
                 {
                     if (guarenteedMutationHistory.All(x => x))
@@ -143,12 +153,8 @@ namespace Sudoku
                         }
                     }
                 }
-                SudokuGrid[] temp = new SudokuGrid[SelectionSize];
-                for (int i = 0; i < SelectionSize; i++)
-                {
-                    temp[i] = population.Dequeue();
-                }
 
+                // if even if enhanced mutation we stagnate turn on diversity selection
                 if (TakeDiversity)
                 {
                     for (int i = SelectionSize; i <= Math.Max(id1, id2); i++)
@@ -165,6 +171,8 @@ namespace Sudoku
                     }
                     takeNumber = 2;
                 }
+
+                // now we can clear the main population and fill it with only best "selection size" number grids
                 population.Clear();
                 for (int i = 0; i < SelectionSize; i++)
                 {
@@ -174,17 +182,22 @@ namespace Sudoku
                 // Check if the best individual is a solution
                 if (population.Peek().rank == 0)
                 {
+                    // solution is found
                     PrintOutputs(population.Peek());
-                    Console.WriteLine();
-                    // av min fitness
-                    int avg = temp.Sum(x => x.rank) / temp.Count();
-                    Console.WriteLine(avg);
-                    int max = temp.Max(x => x.rank);
-                    Console.WriteLine(max);
+                    // for test mode (to plot graphics)
+                    if (PrintFitness)
+                    {
+                        Console.WriteLine();
+                        // av min fitness
+                        int avg = temp.Sum(x => x.rank) / temp.Count();
+                        Console.WriteLine(avg);
+                        int max = temp.Max(x => x.rank);
+                        Console.WriteLine(max);
+                    }
                     return 0;
                 }
 
-                // track varience to make less restarts
+                // track varience to make less restarts (by turning on a guranteed mutation)
                 int average = temp.Sum(x => x.rank) / SelectionSize;
                 int[] diff = new int[SelectionSize];
                 for (int i = 0; i < SelectionSize; i++)
@@ -241,6 +254,8 @@ namespace Sudoku
                     {
                         if (parent2.values == parent1.values)
                         {
+                            // we do not need to crossover parents with the same values
+                            // because we will only get the copy of these parents
                             continue;
                         }
                         SudokuGrid child = Crossover(parent1, parent2);
@@ -255,42 +270,27 @@ namespace Sudoku
                         }
                     }
                 });
-                /*Console.WriteLine("population");
-                var un = population.UnorderedItems;
-                List<int> ints = new List<int>();
-                int smp = 0;
-                foreach (var u in un)
-                {
-                    ints.Add(u.Element.rank);
-                    smp += u.Element.rank;
-                }
-                smp /= ints.Count;
-                ints.Sort();
-                int[] diff2 = new int[ints.Count];
-                for (int i = 0; i < ints.Count; i++)
-                {
-                    diff2[i] = Math.Abs(ints[i] - smp);
-                    Console.Write(ints[i] + " ");
-                }
-                int varin2 = diff2.Sum() / ints.Count;
-                Console.WriteLine("\nvar2 " + varin2 + " sm2 " + smp +"\n");*/
-
                 currentGeneration++;
-
             }
+            #endregion
         }
 
-
+        /// <summary>
+        /// Mutation is swap 2 or more (not given) elements within some 3x3 subgrid.
+        /// Maybe repeated up to 9 times if there is a stagnation in generations.
+        /// </summary>
+        /// <param name="grid"></param>
+        /// <param name="moreMutations"> If stagnation is detected</param>
         public static void Mutate(SudokuGrid grid, bool moreMutations)
         {
-            int mutationsNumber;
+            int mutationsNumber; // chose number if mutations
             if (moreMutations)
             {
-                mutationsNumber = random.Next(20, 30); // from 0 to 9
+                mutationsNumber = random.Next(3, 10); // from 1 to 9
             }
             else
             {
-                mutationsNumber = random.Next(1, 3); // from 0 to 9
+                mutationsNumber = random.Next(1, 4); // from 1 to 3
             }
 
             for (int m = 0; m < mutationsNumber; m++)
@@ -324,7 +324,12 @@ namespace Sudoku
             }
         }
 
-
+        /// <summary>
+        /// Crossover takes random 3x3 from each parent to make a child
+        /// </summary>
+        /// <param name="parent1"></param>
+        /// <param name="parent2"></param>
+        /// <returns></returns>
         public static SudokuGrid Crossover(SudokuGrid parent1, SudokuGrid parent2)
         {
             SudokuGrid child = new SudokuGrid(init);
@@ -353,21 +358,21 @@ namespace Sudoku
             return child;
         }
 
-
+        /// <summary>
+        /// Fitness function calculates fitness score by adding squares of row and columns violations, and penality values.
+        /// Which are calcluated from couting duplicates within given values in rows and columns of initial grid.
+        /// </summary>
+        /// <param name="grid"></param>
+        /// <returns></returns>
         public static int FitnessFunction(SudokuGrid grid)
         {
-            //PrintOutputs(grid);
-
             int rowViolations = 0, columnViolations = 0;
             int penalty = 1000; // Huge penalty for violating given values
-            double result = 0;
-
-            /*Console.WriteLine();
-            PrintOutputs(grid);
-            Console.WriteLine();*/
+            int result = 0;
 
             for (int i = 0; i < 9; i++)
             {
+                // set of seen numbers in rows and columns
                 HashSet<int> seenNumbersRows = new HashSet<int>();
                 HashSet<int> seenNumbersCols = new HashSet<int>();
 
@@ -376,11 +381,11 @@ namespace Sudoku
 
                     if (!grid.isGiven[i, j] && PrecomputedGivenRows[i] != null && PrecomputedGivenRows[i].Contains(grid.values[i, j]))
                     {
-                        result += penalty;
+                        result += penalty; // penalty if there are duplicates
                     }
                     if (!grid.isGiven[j, i] && PrecomputedGivenCols[i] != null && PrecomputedGivenCols[i].Contains(grid.values[j, i]))
                     {
-                        result += penalty;
+                        result += penalty; // penalty if there are duplicates
                     }
                     seenNumbersRows.Add(grid.values[i, j]);
                     seenNumbersCols.Add(grid.values[j, i]);
@@ -389,15 +394,18 @@ namespace Sudoku
                 columnViolations += 9 - seenNumbersCols.Count;
 
             }
-
-            // Penalize duplicates and prioritize valid solutions
-            result = Math.Pow(rowViolations, 2) + Math.Pow(columnViolations, 2);
-
-            //Console.WriteLine($"{rowViolations} row violations, {columnViolations} column violations, {result} result");
-            return (int)result;
+            result += (rowViolations * rowViolations) + (columnViolations * columnViolations);
+            return result;
         }
 
-
+        /// <summary>
+        /// We are creating an initial population of size 100. 
+        /// Also with the first start of the algorithm, precomputedAvaliableNumebrs array is filled.
+        /// It contatins all possible numbers except the given.
+        /// </summary>
+        /// <param name="size"></param>
+        /// <param name="init"></param>
+        /// <param name="population"></param>
         public static void CreatePopulation(int size, SudokuGrid init, List<SudokuGrid> population)
         {
             // Precompute available numbers for each subgrid
@@ -424,7 +432,7 @@ namespace Sudoku
             }
 
 
-            // Create population
+            // Create population (uses precomputed avaliable numbers array for each subgrid)
             for (int s = 0; s < size; s++)
             {
                 SudokuGrid copy = new SudokuGrid(init);
@@ -436,7 +444,7 @@ namespace Sudoku
                     {
                         // Get a reshuffled version of the precomputed available numbers
                         var availableNumbers = new List<int>(precomputedAvailableNumbers[subgridIndex]);
-                        ShuffleList(availableNumbers);
+                        ShuffleList(availableNumbers); 
 
                         int numberIndex = 0;
                         for (int i = gridRow; i < gridRow + 3; i++)
@@ -459,7 +467,11 @@ namespace Sudoku
         }
 
 
-        // Helper method to shuffle a list
+        /// <summary>
+        /// Helper method to shuffle a list
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="list"></param>
         private static void ShuffleList<T>(List<T> list)
         {
             for (int i = list.Count - 1; i > 0; i--)
@@ -468,7 +480,11 @@ namespace Sudoku
                 (list[i], list[j]) = (list[j], list[i]);
             }
         }
-
+        /// <summary>
+        /// I experimented with parsing of inputs, because of failed test, therefore try catch are used.
+        /// Elsewise this is a simple 9x9 table filling method.
+        /// </summary>
+        /// <param name="grid"></param>
         public static void ReadInputs(SudokuGrid grid)
         {
             for (int i = 0; i < 9; i++)
@@ -507,6 +523,10 @@ namespace Sudoku
             }
         }
 
+        /// <summary>
+        /// Method to print 9x9 grid, either for debug, or for ready solution.
+        /// </summary>
+        /// <param name="grid"></param>
         public static void PrintOutputs(SudokuGrid grid)
         {
             for (int i = 0; i < 9; i++)
@@ -528,7 +548,10 @@ namespace Sudoku
             }
         }
     }
-
+    /// <summary>
+    /// Abstraction of 9x9 sudoku grid.
+    /// Implements IComparable interface, which allows comparing each grid, via it rank (fitness fucntion value).
+    /// </summary>
     public class SudokuGrid : IComparable<SudokuGrid>
     {
         public int rank;

@@ -11,7 +11,7 @@ code = ["./sudoku.exe"]
 # Python коды
 # code = ["python", "./submit.py"]
 
-N_TESTS = 3
+N_TESTS = 30
 
 def read_sudoku(file):
     sudoku = []
@@ -184,8 +184,4 @@ def main():
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-
-    plt.plot([1, 2, 3], [4, 5, 6])
-    plt.title("Test Plot")
-    plt.show()
     main()
